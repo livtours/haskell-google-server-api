@@ -9,25 +9,33 @@ module Google.Response (
     Token (..),
     Account (..),
     DateTime (..),
+    Bytes (..),
     ZonedDateTime (..),
     CalendarEvent (..),
     CalendarEventList (..),
     GmailSend (..),
     GmailList (..),
     GmailMessage (..),
+    MessagePart (..),
+    MessagePartHeader (..),
     ExtendedProperties (..),
     FileResource (..),
     FileList (..),
     MediaContent (..),
 ) where
 
-import Data.Aeson (FromJSON (..), withObject, (.:?))
+import Data.Aeson (FromJSON (..), ToJSON (..), Value (String), withObject, withText, (.:?))
 import Data.Aeson.Casing (snakeCase)
 import Data.Aeson.TH (Options (..), defaultOptions, deriveFromJSON, deriveJSON)
+import Data.Aeson.Types (Parser)
+import Data.ByteString (ByteString)
+
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
+import Data.Int (Int32)
 import Data.Maybe (fromMaybe)
-import Data.Text (Text, intercalate, splitOn)
+import Data.Text (Text, intercalate, splitOn, unpack)
+import qualified Data.Text.Encoding as TE
 import Data.Time.Clock (UTCTime)
 import Data.Time.LocalTime (ZonedTime, zonedTimeToUTC)
 import Data.Typeable (Typeable)
@@ -36,6 +44,44 @@ import Web.FormUrlEncoded (FromForm, ToForm)
 import Web.HttpApiData (FromHttpApiData (..), ToHttpApiData (..), parseUrlPieces, toUrlPieces)
 
 import Google.Type (FileId, MediaContent (..), MediaType)
+
+{- | Binary data.
+
+This data is passed to/from the serialisation routines as-is, and any
+particular encoding or decoding (say, base64) is left up to the caller.
+-}
+newtype Bytes = Bytes {unBytes :: ByteString}
+    deriving (Eq, Show, Read, Ord, Typeable, Generic)
+
+instance ToHttpApiData Bytes where
+    toQueryParam = TE.decodeUtf8 . unBytes
+    toHeader = unBytes
+
+instance FromHttpApiData Bytes where
+    parseQueryParam = pure . Bytes . TE.encodeUtf8
+    parseHeader = pure . Bytes
+
+instance FromJSON Bytes where parseJSON = parseJSONText "Bytes"
+instance ToJSON Bytes where toJSON = toJSONText
+
+parseJSONText :: (FromHttpApiData a) => String -> Value -> Parser a
+parseJSONText n = withText n (either (fail . f) pure . parseQueryParam)
+  where
+    f x = n <> " - " <> unpack x
+
+toJSONText :: (ToHttpApiData a) => a -> Value
+toJSONText = String . toQueryParam
+
+newtype Textual a = Textual a
+    deriving (Eq, Ord, Read, Show, Num, Fractional, Typeable, ToHttpApiData, FromHttpApiData)
+
+instance (FromJSON a, FromHttpApiData a) => FromJSON (Textual a) where
+    parseJSON (String s) =
+        either (fail . unpack) (pure . Textual) (parseQueryParam s)
+    parseJSON o = Textual <$> parseJSON o
+
+instance (ToHttpApiData a) => ToJSON (Textual a) where
+    toJSON (Textual x) = String (toQueryParam x)
 
 data Token = Token
     { accessToken :: Text
@@ -134,17 +180,42 @@ instance FromForm GmailSend
 
 instance ToForm GmailSend
 
+data MessagePartHeader = MessagePartHeader
+    { value :: Maybe Text
+    , name :: Maybe Text
+    }
+    deriving (Eq, Generic, Show, Typeable)
+deriveJSON defaultOptions ''MessagePartHeader
+
+data MessagePartBody = MessagePartBody
+    { _mpbSize :: Maybe (Textual Int32)
+    , _mpbData :: Maybe Bytes
+    , _mpbAttachmentId :: Maybe Text
+    }
+    deriving (Eq, Generic, Show, Typeable)
+deriveJSON (defaultOptions{fieldLabelModifier = snakeCase . drop 3}) ''MessagePartBody
+
+data MessagePart = MessagePart
+    { parts :: Maybe [MessagePart]
+    , body :: Maybe MessagePartBody
+    , mimeType :: Maybe Text
+    , headers :: Maybe [MessagePartHeader]
+    , partId :: Maybe Text
+    , filename :: Maybe Text
+    }
+    deriving (Eq, Generic, Show, Typeable)
+deriveJSON defaultOptions ''MessagePart
+
 data GmailMessage = GmailMessage
     { id :: Text
     , threadId :: Text
+    , labelIds :: Maybe [Text]
     , snippet :: Maybe Text
+    , raw :: Maybe Bytes
+    , payload :: Maybe MessagePart
     }
     deriving (Eq, Generic, Show, Typeable)
 deriveJSON defaultOptions ''GmailMessage
-
-instance FromForm GmailMessage
-
-instance ToForm GmailMessage
 
 data GmailList = GmailList
     { messages :: [GmailMessage]
