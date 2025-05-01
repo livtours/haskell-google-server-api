@@ -12,6 +12,7 @@ module Google.Client (
     postGmailSend,
     getGmailList,
     getGmailMessage,
+    modifyGmailMessage,
     getDriveFileList,
     createDriveFileMultipart,
     downloadDriveFile,
@@ -130,6 +131,16 @@ type API =
             :> Capture "messageId" Text
             :> Header "Authorization" Bearer
             :> Get '[JSON] Response.GmailMessage
+        :<|> "gmail"
+            :> "v1"
+            :> "users"
+            :> "me"
+            :> "messages"
+            :> Capture "messageId" Text
+            :> "modify"
+            :> Header "Authorization" Bearer
+            :> ReqBody '[JSON] Form.ModifyMessage
+            :> Post '[JSON] Response.GmailMessage
         :<|> "drive"
             :> "v3"
             :> "files"
@@ -176,6 +187,7 @@ postCalendarEvent' ::
 postGmailSend' :: Maybe Bearer -> Form.GmailSend -> ClientM Response.GmailSend
 getGmailList' :: Maybe Bearer -> Maybe Int -> Maybe [Type.LabelId] -> ClientM Response.GmailList
 getGmailMessage' :: Text -> Maybe Bearer -> ClientM Response.GmailMessage
+modifyGmailMessage' :: Text -> Maybe Bearer -> Form.ModifyMessage -> ClientM Response.GmailMessage
 getDriveFileList' ::
     Maybe Bearer ->
     Maybe Type.QueryString ->
@@ -197,6 +209,7 @@ getToken'
     :<|> postGmailSend'
     :<|> getGmailList'
     :<|> getGmailMessage'
+    :<|> modifyGmailMessage'
     :<|> getDriveFileList'
     :<|> createDriveFileMultipart'
     :<|> downloadDriveFile' =
@@ -282,6 +295,14 @@ getGmailMessage token messageId = do
     manager <- newManager tlsManagerSettings
     runClientM
         (getGmailMessage' messageId (pure . toBearer $ token))
+        (mkClientEnv manager googleBaseUrl)
+
+modifyGmailMessage ::
+    Response.Token -> Text -> Form.ModifyMessage -> IO (Either ClientError Response.GmailMessage)
+modifyGmailMessage token messageId modifyMessage = do
+    manager <- newManager tlsManagerSettings
+    runClientM
+        (modifyGmailMessage' messageId (pure . toBearer $ token) modifyMessage)
         (mkClientEnv manager googleBaseUrl)
 
 getDriveFileList ::

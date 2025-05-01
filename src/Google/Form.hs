@@ -9,6 +9,7 @@ Define data types to represent all of the requests that are sent to the API.
 module Google.Form (
     CalendarEvent (..),
     GmailSend (..),
+    ModifyMessage (..),
     Account (..),
     DateTime (..),
     ExtendedProperty (..),
@@ -153,6 +154,14 @@ data GmailSend = GmailSend
     deriving (Eq, Generic, Show, Typeable)
 
 deriveJSON defaultOptions ''GmailSend
+
+data ModifyMessage = ModifyMessage
+    { addLabelIds :: [Text]
+    , removeLabelIds :: [Text]
+    }
+    deriving (Eq, Generic, Show, Typeable)
+
+deriveJSON defaultOptions ''ModifyMessage
 
 data GetFileParams = GetFileParams
     { query :: Maybe QueryString
