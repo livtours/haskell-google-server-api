@@ -32,7 +32,6 @@
             ghcid
             cabal-install
             fourmolu
-            pkgs.rlwrap
           ];
           inputsFrom = [ self.packages.${system}.default.env ];
         };

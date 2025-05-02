@@ -1,5 +1,3 @@
-{-# LANGUAGE CPP #-}
-
 {- | Create a signed JWT needed to make the access token request
 to gain access to Google APIs for server to server applications.
 
@@ -17,33 +15,20 @@ module Google.JWT (
     getSignedJWT,
 ) where
 
-import Codec.Crypto.RSA.Pure (
-    PrivateKey (..),
-    PublicKey (..),
-    hashSHA256,
-    rsassa_pkcs1_v1_5_sign,
- )
 import Control.Monad (unless)
-import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
-import Data.Aeson (decode, (.:))
+import Crypto.PubKey.RSA.Types (PrivateKey)
+import Data.Aeson (decode, toJSON, (.:))
 import Data.Aeson.Types (parseMaybe)
 import Data.ByteString (ByteString)
 import Data.ByteString.Base64.URL (encode)
-import Data.ByteString.Lazy (fromStrict, toStrict)
 import qualified Data.ByteString.Lazy as LBS
-import Data.Maybe (fromJust, fromMaybe)
-#if !MIN_VERSION_base(4, 11, 0)
-import Data.Monoid ((<>))
-#endif
+import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding (encodeUtf8)
-import Data.UnixTime (getUnixTime, utSeconds)
-import Foreign.C.Types (CTime (..))
-import OpenSSL.EVP.PKey (toKeyPair)
-import OpenSSL.PEM (PemPasswordSupply (PwNone), readPrivateKey)
-import OpenSSL.RSA (rsaD, rsaE, rsaN, rsaP, rsaQ, rsaSize)
+import Data.Time.Clock.POSIX (getPOSIXTime)
+import GHC.Exts (IsList (fromList))
+import qualified Web.JWT as JWT
 
 class HasJWT a where
     getJwt :: a -> JWT
@@ -61,14 +46,14 @@ data JWT = JWT
 readServiceKeyFile :: FilePath -> IO (Maybe JWT)
 readServiceKeyFile fp = do
     content <- LBS.readFile fp
-    runMaybeT $ do
-        result <- MaybeT . pure . decode $ content
+    return $ do
+        result <- decode content
         (pkey, clientEmail) <-
-            MaybeT . pure . flip parseMaybe result $ \obj -> do
+            flip parseMaybe result $ \obj -> do
                 pkey <- obj .: "private_key"
                 clientEmail <- obj .: "client_email"
                 pure (pkey, clientEmail)
-        liftIO $ JWT <$> (pure $ Email clientEmail) <*> (fromPEMString pkey)
+        JWT (Email clientEmail) <$> JWT.readRsaSecret (encodeUtf8 pkey)
 
 newtype SignedJWT = SignedJWT
     { unSignedJWT :: ByteString
@@ -102,31 +87,6 @@ scopeUrl ScopeDriveFile = "https://www.googleapis.com/auth/drive.file"
 scopeUrl ScopeDriveMetadataRead = "https://www.googleapis.com/auth/drive.metadata.readonly"
 scopeUrl ScopeSpreadsheets = "https://www.googleapis.com/auth/spreadsheets"
 
-{- | Get the private key obtained from the
-Google API Console from a PEM 'String'.
-
->fromPEMString "-----BEGIN PRIVATE KEY-----\nB9e [...] bMdF\n-----END PRIVATE KEY-----\n"
->
--}
-fromPEMString :: String -> IO PrivateKey
-fromPEMString s =
-    fromJust . toKeyPair <$> readPrivateKey s PwNone >>= \k ->
-        return
-            PrivateKey
-                { private_pub =
-                    PublicKey
-                        { public_size = rsaSize k
-                        , public_n = rsaN k
-                        , public_e = rsaE k
-                        }
-                , private_d = rsaD k
-                , private_p = rsaP k
-                , private_q = rsaQ k
-                , private_dP = 0
-                , private_dQ = 0
-                , private_qinv = 0
-                }
-
 {- | Create the signed JWT ready for transmission
 in the access token request as assertion value.
 
@@ -143,32 +103,28 @@ getSignedJWT ::
     Maybe Int ->
     -- | Either an error message or a signed JWT.
     IO (Either String SignedJWT)
-getSignedJWT JWT{..} msub scs mxt = do
-    let xt = fromIntegral (fromMaybe 3600 mxt)
+getSignedJWT JWT{..} msub scopes maxExpTime = do
+    let xt = fromIntegral $ fromMaybe 3600 maxExpTime
     unless (xt >= 1 && xt <= 3600) (fail "Bad expiration time")
-    t <- getUnixTime
-    let i =
-            mconcat
-                [ header
-                , "."
-                , toB64 $
-                    mconcat
-                        [ "{\"iss\":\"" <> unEmail clientEmail <> "\","
-                        , maybe mempty (\(Email sub) -> "\"sub\":\"" <> sub <> "\",") msub
-                        , "\"scope\":\"" <> T.intercalate " " (map scopeUrl scs) <> "\","
-                        , "\"aud\":\"https://www.googleapis.com/oauth2/v4/token\","
-                        , "\"exp\":" <> toT (utSeconds t + CTime xt) <> ","
-                        , "\"iat\":" <> toT (utSeconds t) <> "}"
-                        ]
-                ]
-    return $
-        either
-            (\err -> Left $ "RSAError: " <> show err)
-            (\s -> return $ SignedJWT $ i <> "." <> encode (toStrict s))
-            (rsassa_pkcs1_v1_5_sign hashSHA256 privateKey $ fromStrict i)
-  where
-    toT = T.pack . show
-    header = toB64 "{\"alg\":\"RS256\",\"typ\":\"JWT\"}"
+    now <- getPOSIXTime
+    let expTime = now + xt
 
-toB64 :: Text -> ByteString
-toB64 = encode . encodeUtf8
+    let cs =
+            mempty
+                { JWT.iss = JWT.stringOrURI $ unEmail clientEmail
+                , JWT.sub = JWT.stringOrURI . unEmail =<< msub
+                , JWT.aud = Right . return <$> JWT.stringOrURI "https://www.googleapis.com/oauth2/v4/token"
+                , JWT.iat = JWT.numericDate now
+                , JWT.exp = JWT.numericDate expTime
+                , JWT.unregisteredClaims =
+                    JWT.ClaimsMap $
+                        fromList
+                            [("scope", toJSON (T.intercalate " " (map scopeUrl scopes)))]
+                }
+
+        -- JOSE header
+        hdr = mempty{JWT.typ = Just "JWT", JWT.alg = Just JWT.RS256}
+
+    -- Sign the JWT with RS256
+    let jwtText = JWT.encodeSigned (JWT.EncodeRSAPrivateKey privateKey) hdr cs
+    return $ Right $ SignedJWT $ encode $ encodeUtf8 jwtText
