@@ -1,3 +1,5 @@
+{-# LANGUAGE DerivingStrategies #-}
+
 {- | Create a signed JWT needed to make the access token request
 to gain access to Google APIs for server to server applications.
 
@@ -9,6 +11,8 @@ module Google.JWT (
     JWT,
     HasJWT (..),
     readServiceKeyFile,
+    readServiceKeyPayload,
+    ServiceKeyPayload (..),
     SignedJWT (..),
     Email (..),
     Scope (..),
@@ -17,11 +21,9 @@ module Google.JWT (
 
 import Control.Monad (unless)
 import Crypto.PubKey.RSA.Types (PrivateKey)
-import Data.Aeson (decode, toJSON, (.:))
-import Data.Aeson.Types (parseMaybe)
+import Data.Aeson (FromJSON (..), decodeFileStrict, toJSON, withObject, (.:))
 import Data.ByteString (ByteString)
 import Data.ByteString.Base64.URL (encode)
-import qualified Data.ByteString.Lazy as LBS
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -41,29 +43,38 @@ data JWT = JWT
     { clientEmail :: Email
     , privateKey :: PrivateKey
     }
-    deriving (Eq, Show, Read)
+    deriving stock (Eq, Show, Read)
 
 readServiceKeyFile :: FilePath -> IO (Maybe JWT)
-readServiceKeyFile fp = do
-    content <- LBS.readFile fp
-    return $ do
-        result <- decode content
-        (pkey, clientEmail) <-
-            flip parseMaybe result $ \obj -> do
-                pkey <- obj .: "private_key"
-                clientEmail <- obj .: "client_email"
-                pure (pkey, clientEmail)
-        JWT (Email clientEmail) <$> JWT.readRsaSecret (encodeUtf8 pkey)
+readServiceKeyFile fp =
+    (readServiceKeyPayload =<<) <$> decodeFileStrict fp
+
+data ServiceKeyPayload = ServiceKeyPayload
+    { skpClientEmail :: T.Text
+    , skpPrivateKey :: T.Text
+    }
+    deriving stock (Eq, Show)
+
+instance FromJSON ServiceKeyPayload where
+    parseJSON =
+        withObject "ServiceKeyPayload" $ \obj ->
+            ServiceKeyPayload
+                <$> obj .: "private_key"
+                <*> obj .: "client_email"
+
+readServiceKeyPayload :: ServiceKeyPayload -> Maybe JWT
+readServiceKeyPayload payload = do
+    JWT (Email $ skpClientEmail payload) <$> JWT.readRsaSecret (encodeUtf8 $ skpPrivateKey payload)
 
 newtype SignedJWT = SignedJWT
     { unSignedJWT :: ByteString
     }
-    deriving (Eq, Show, Read, Ord)
+    deriving stock (Eq, Show, Read, Ord)
 
 newtype Email = Email
     { unEmail :: Text
     }
-    deriving (Eq, Show, Read, Ord)
+    deriving stock (Eq, Show, Read, Ord)
 
 data Scope
     = ScopeCalendarFull
@@ -73,7 +84,7 @@ data Scope
     | ScopeDriveFile
     | ScopeDriveMetadataRead
     | ScopeSpreadsheets
-    deriving (Eq, Show, Read, Ord)
+    deriving stock (Eq, Show, Read, Ord)
 
 {- | Make sure if you added new scope, update configuration in page bellow.
   https://admin.google.com/uzuz.jp/AdminHome?chromeless=1#OGX:ManageOauthClients
