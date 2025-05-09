@@ -127,7 +127,7 @@ getSignedJWT JWT{..} msub scopes maxExpTime = do
             mempty
                 { JWT.iss = JWT.stringOrURI $ unEmail clientEmail
                 , JWT.sub = JWT.stringOrURI . unEmail =<< msub
-                , JWT.aud = Right . return <$> JWT.stringOrURI "https://www.googleapis.com/oauth2/v4/token"
+                , JWT.aud = Left <$> JWT.stringOrURI "https://www.googleapis.com/oauth2/v4/token"
                 , JWT.iat = JWT.numericDate now
                 , JWT.exp = JWT.numericDate expTime
                 , JWT.unregisteredClaims =
