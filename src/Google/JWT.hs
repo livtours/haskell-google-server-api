@@ -23,7 +23,6 @@ import Control.Monad (unless)
 import Crypto.PubKey.RSA.Types (PrivateKey)
 import Data.Aeson (FromJSON (..), decodeFileStrict, toJSON, withObject, (.:))
 import Data.ByteString (ByteString)
-import Data.ByteString.Base64.URL (encode)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -142,4 +141,4 @@ getSignedJWT JWT{..} msub scopes maxExpTime = do
 
     -- Sign the JWT with RS256
     let jwtText = JWT.encodeSigned (JWT.EncodeRSAPrivateKey privateKey) hdr cs
-    return $ Right $ SignedJWT $ encode $ encodeUtf8 jwtText
+    return $ Right $ SignedJWT $ encodeUtf8 jwtText
