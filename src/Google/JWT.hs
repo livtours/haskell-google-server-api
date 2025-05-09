@@ -81,6 +81,8 @@ data Scope
     | ScopeCalendarRead
     | ScopeGmailFull
     | ScopeGmailSend
+    | ScopeGmailLabels
+    | ScopeGmailReadOnly
     | ScopeDriveFile
     | ScopeDriveMetadataRead
     | ScopeSpreadsheets
@@ -94,6 +96,8 @@ scopeUrl ScopeCalendarFull = "https://www.googleapis.com/auth/calendar"
 scopeUrl ScopeCalendarRead = "https://www.googleapis.com/auth/calendar.readonly"
 scopeUrl ScopeGmailSend = "https://www.googleapis.com/auth/gmail.send"
 scopeUrl ScopeGmailFull = "https://mail.google.com/"
+scopeUrl ScopeGmailLabels = "https://www.googleapis.com/auth/gmail.labels"
+scopeUrl ScopeGmailReadOnly = "https://www.googleapis.com/auth/gmail.readonly"
 scopeUrl ScopeDriveFile = "https://www.googleapis.com/auth/drive.file"
 scopeUrl ScopeDriveMetadataRead = "https://www.googleapis.com/auth/drive.metadata.readonly"
 scopeUrl ScopeSpreadsheets = "https://www.googleapis.com/auth/spreadsheets"
