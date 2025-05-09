@@ -59,8 +59,8 @@ instance FromJSON ServiceKeyPayload where
     parseJSON =
         withObject "ServiceKeyPayload" $ \obj ->
             ServiceKeyPayload
-                <$> obj .: "private_key"
-                <*> obj .: "client_email"
+                <$> obj .: "client_email"
+                <*> obj .: "private_key"
 
 readServiceKeyPayload :: ServiceKeyPayload -> Maybe JWT
 readServiceKeyPayload payload = do
