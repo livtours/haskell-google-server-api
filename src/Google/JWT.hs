@@ -93,7 +93,7 @@ scopeUrl :: Scope -> Text
 scopeUrl ScopeCalendarFull = "https://www.googleapis.com/auth/calendar"
 scopeUrl ScopeCalendarRead = "https://www.googleapis.com/auth/calendar.readonly"
 scopeUrl ScopeGmailSend = "https://www.googleapis.com/auth/gmail.send"
-scopeUrl ScopeGmailFull = "https://www.googleapis.com/auth/gmail"
+scopeUrl ScopeGmailFull = "https://mail.google.com/"
 scopeUrl ScopeDriveFile = "https://www.googleapis.com/auth/drive.file"
 scopeUrl ScopeDriveMetadataRead = "https://www.googleapis.com/auth/drive.metadata.readonly"
 scopeUrl ScopeSpreadsheets = "https://www.googleapis.com/auth/spreadsheets"
